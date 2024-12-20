@@ -1,83 +1,88 @@
 <template>
-  <div class="catalog-browser">
-    <div class="navigation-bar">
-      <button v-if="!showingCatalog" 
-              @click="goBack" 
-              class="back-button">
-        ← Back to Catalog
-      </button>
-      <div v-if="showingCatalog && paginationLinks.length > 0" class="pagination-links">
-        <button 
-          v-for="link in paginationLinks" 
-          :key="link.rel"
-          @click="loadPage(link.href)"
-          class="pagination-button">
-          {{ formatLinkRel(link.rel) }}
+  <div>
+    <app-header />
+    <div class="catalog-browser">
+      <div class="navigation-bar">
+        <button v-if="!showingCatalog" 
+                @click="goBack" 
+                class="back-button">
+          ← Back to Catalog
         </button>
-      </div>
-    </div>
-
-    <div v-if="loading" class="loading">Loading...</div>
-    <div v-else-if="error" class="error">{{ error }}</div>
-    <div v-else>
-      <!-- Catalog Overview -->
-      <div v-if="showingCatalog" class="catalog-overview">
-        <div class="catalog-header">
-          <h1>{{ catalog.title }}</h1>
-          <p class="description">{{ catalog.description }}</p>
-          
-          <div class="keywords">
-            <h3>Keywords</h3>
-            <div class="keyword-list">
-              <span v-for="keyword in catalog.keywords" 
-                    :key="keyword" 
-                    class="keyword-tag">
-                {{ keyword }}
-              </span>
-            </div>
-          </div>
+        <div v-if="showingCatalog && paginationLinks.length > 0" class="pagination-links">
+          <button 
+            v-for="link in paginationLinks" 
+            :key="link.rel"
+            @click="loadPage(link.href)"
+            class="pagination-button">
+            {{ formatLinkRel(link.rel) }}
+          </button>
         </div>
+      </div>
 
-        <div class="datasets-grid">
-          <div v-for="dataset in datasets" 
-               :key="dataset.id" 
-               class="dataset-card"
-               @click="viewDataset(dataset)">
-            <h3>{{ dataset.properties.title }}</h3>
-            <p class="dataset-description">{{ dataset.properties.description }}</p>
-            <div class="dataset-meta">
-              <div class="time-range" v-if="dataset.properties.temporal?.interval">
-                {{ formatDate(dataset.properties.temporal.interval[0]) }} - {{ formatDate(dataset.properties.temporal.interval[1]) }}
+      <div v-if="loading" class="loading">Loading...</div>
+      <div v-else-if="error" class="error">{{ error }}</div>
+      <div v-else>
+        <!-- Catalog Overview -->
+        <div v-if="showingCatalog" class="catalog-overview">
+          <div class="catalog-header">
+            <h1>{{ catalog.title }}</h1>
+            <p class="description">{{ catalog.description }}</p>
+            
+            <div class="keywords">
+              <h3>Keywords</h3>
+              <div class="keyword-list">
+                <span v-for="keyword in catalog.keywords" 
+                      :key="keyword" 
+                      class="keyword-tag">
+                  {{ keyword }}
+                </span>
               </div>
-              <div class="dataset-type">{{ dataset.type || 'Dataset' }}</div>
             </div>
           </div>
-        </div>
-        <div class="pagination-info">
-          Showing {{ numberReturned }} of {{ numberMatched }} datasets
-        </div>
-      </div>
 
-      <!-- Dataset View -->
-      <dataset-viewer
-        v-else
-        :dataset="selectedDataset"
-        @navigate="handleNavigate"
-        @wms-selected="handleWmsSelected"
-      />
+          <div class="datasets-grid">
+            <div v-for="dataset in datasets" 
+                 :key="dataset.id" 
+                 class="dataset-card"
+                 @click="viewDataset(dataset)">
+              <h3>{{ dataset.properties.title }}</h3>
+              <p class="dataset-description">{{ dataset.properties.description }}</p>
+              <div class="dataset-meta">
+                <div class="time-range" v-if="dataset.properties.temporal?.interval">
+                  {{ formatDate(dataset.properties.temporal.interval[0]) }} - {{ formatDate(dataset.properties.temporal.interval[1]) }}
+                </div>
+                <div class="dataset-type">{{ dataset.type || 'Dataset' }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="pagination-info">
+            Showing {{ numberReturned }} of {{ numberMatched }} datasets
+          </div>
+        </div>
+
+        <!-- Dataset View -->
+        <dataset-viewer
+          v-else
+          :dataset="selectedDataset"
+          @navigate="handleNavigate"
+          @wms-selected="handleWmsSelected"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, computed } from 'vue'
+import { ref, computed, provide } from 'vue'
 import DatasetViewer from '../components/DatasetViewer.vue'
+import AppHeader from '../components/AppHeader.vue'
 import { fetchCollection, fetchItems, fetchJson, isEmotionalUrl } from '../services/api'
 
 export default {
   name: 'CatalogBrowser',
   components: {
-    DatasetViewer
+    DatasetViewer,
+    AppHeader
   },
   setup() {
     const loading = ref(true)
@@ -113,9 +118,9 @@ export default {
       try {
         const response = await fetchItems(url)
         datasets.value = response.features
-        paginationLinks.value = response.links.filter(link => 
-          ['next', 'prev', 'first', 'last'].includes(link.rel)
-        )
+        paginationLinks.value = response.links
+          .filter(link => ['next', 'prev', 'first', 'last'].includes(link.rel))
+          .filter(link => !['alternate', 'self'].includes(link.rel) && !link.title?.includes('JSON'))
         numberMatched.value = response.numberMatched
         numberReturned.value = response.numberReturned
       } catch (e) {
@@ -171,6 +176,12 @@ export default {
       selectedDataset.value = null
     }
 
+    // Provide the reset function to be used by the header
+    provide('resetView', () => {
+      selectedDataset.value = null
+      loadCatalog()
+    })
+
     // Initialize
     loadCatalog()
 
@@ -204,6 +215,7 @@ export default {
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   padding: 2rem;
+  margin-top: 2rem;
 }
 
 .navigation-bar {
@@ -276,9 +288,33 @@ export default {
 
 .datasets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1.5rem;
   margin: 2rem 0;
+}
+
+@media (min-width: 1200px) {
+  .datasets-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 1199px) and (min-width: 900px) {
+  .datasets-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 899px) and (min-width: 600px) {
+  .datasets-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 599px) {
+  .datasets-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dataset-card {
@@ -379,10 +415,6 @@ export default {
 
   .navigation-bar {
     flex-wrap: wrap;
-  }
-
-  .datasets-grid {
-    grid-template-columns: 1fr;
   }
 
   .catalog-header h1 {
